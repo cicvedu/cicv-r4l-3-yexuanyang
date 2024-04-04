@@ -3,6 +3,7 @@
 //! Rust character device sample.
 
 use core::result::Result::Err;
+use core::ops::{Deref, DerefMut};
 
 use kernel::prelude::*;
 use kernel::sync::Mutex;
@@ -39,12 +40,48 @@ impl file::Operations for RustFile {
         )
     }
 
-    fn write(_this: &Self,_file: &file::File,_reader: &mut impl kernel::io_buffer::IoBufferReader,_offset:u64,) -> Result<usize> {
-        Err(EPERM)
+    fn write(this: &Self,_file: &file::File,reader: &mut impl kernel::io_buffer::IoBufferReader,mut offset:u64,) -> Result<usize> {
+        let offset = &mut offset;
+        let mut buffer = this.inner.lock();
+        let inner = buffer.deref_mut();
+        let len = reader.len();
+        if len == 0 {
+            pr_info!("reader has no data");
+            return Err(EPERM);
+        } else {
+            pr_info!("reader has {} bytes in buffer", len);
+        }
+        if inner.len() < len {
+            return Err(ENOSPC);
+        }
+        let v = reader.read_all();
+        match v {
+            Ok(v) => {
+                for c in v {
+                    inner[*offset as usize] = c;
+                    *offset += 1;
+                }
+                Ok(len)
+            }
+            Err(_) => Err(EPERM)
+        }
     }
 
-    fn read(_this: &Self,_file: &file::File,_writer: &mut impl kernel::io_buffer::IoBufferWriter,_offset:u64,) -> Result<usize> {
-        Err(EPERM)
+    fn read(this: &Self,_file: &file::File,writer: &mut impl kernel::io_buffer::IoBufferWriter,mut offset:u64,) -> Result<usize> {
+        let offset = &mut offset;
+        let buffer = this.inner.lock();
+        let inner = buffer.deref();
+
+        if *offset >= inner.len() as u64 {
+            return Ok(0);
+        }
+        if writer.write_slice(inner).is_err() {
+            Err(EPERM)
+        } else {
+            let len = inner.len();
+            *offset += len as u64;
+            Ok(inner.len())
+        }
     }
 }
 
