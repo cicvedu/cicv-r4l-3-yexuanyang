@@ -7,6 +7,7 @@
 //! [`include/linux/skbuff.h`](../../../../include/linux/skbuff.h).
 
 use crate::{
+    pr_info,
     bindings, device,
     error::{code::ENOMEM, from_kernel_result},
     str::CStr,
@@ -208,6 +209,7 @@ impl<T: DeviceOperations> Drop for Registration<T> {
             }
             bindings::free_netdev(self.dev);
         }
+        pr_info!("drop Registration");
     }
 }
 
@@ -476,6 +478,13 @@ impl Napi {
         // SAFETY: The existence of a shared reference means `self.0` is valid.
         unsafe {
             bindings::napi_enable(self.0.get());
+        }
+    }
+
+    /// Disable NAPI scheduling
+    pub fn disable(&self) {
+        unsafe{
+            bindings::napi_disable(self.0.get());
         }
     }
 

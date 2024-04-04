@@ -5,7 +5,8 @@
 #![allow(unused)]
 
 use core::iter::Iterator;
-use core::sync::atomic::AtomicPtr;
+use core::sync::atomic::{AtomicPtr, Ordering};
+use core::ops::Deref;
 
 use kernel::pci::Resource;
 use kernel::prelude::*;
@@ -13,6 +14,7 @@ use kernel::sync::Arc;
 use kernel::{pci, device, driver, bindings, net, dma, c_str};
 use kernel::device::RawDevice;
 use kernel::sync::SpinLock;
+use kernel::driver::DeviceRemoval;
 
 
 
@@ -56,7 +58,6 @@ unsafe impl Sync for NetDevicePrvData {}
 
 /// Represent the network device
 struct NetDevice {}
-
 
 impl NetDevice {
 
@@ -141,7 +142,6 @@ impl NetDevice {
 
     }
 
-
 }
 
 #[vtable]
@@ -189,8 +189,18 @@ impl net::DeviceOperations for NetDevice {
         Ok(())
     }
 
-    fn stop(_dev: &net::Device, _data: &NetDevicePrvData) -> Result {
+    fn stop(dev: &net::Device, data: &NetDevicePrvData) -> Result {
         pr_info!("Rust for linux e1000 driver demo (net device stop)\n");
+        dev.netif_carrier_off();
+        data.e1000_hw_ops.deref().e1000_irq_disable();
+
+        dev.netif_stop_queue();
+        data.napi.deref().disable();
+
+        let irq_ptr = data._irq_handler.load(Ordering::Relaxed);
+        unsafe{ drop(Box::from_raw(irq_ptr)); }
+
+        drop(data);
         Ok(())
     }
 
@@ -279,6 +289,7 @@ impl kernel::irq::Handler for E1000InterruptHandler {
 
         pr_info!("pending_irqs: {}\n", pending_irqs);
 
+        // FIXME: 
         if pending_irqs == 0 {
             return kernel::irq::Return::None
         }
@@ -293,10 +304,13 @@ impl kernel::irq::Handler for E1000InterruptHandler {
 /// the private data for the adapter
 struct E1000DrvPrvData {
     _netdev_reg: net::Registration<NetDevice>,
+    bars: i32,
 }
 
 impl driver::DeviceRemoval for E1000DrvPrvData {
     fn device_remove(&self) {
+        let netdev = self._netdev_reg.dev_get().deref();
+
         pr_info!("Rust for linux e1000 driver demo (device_remove)\n");
     }
 }
@@ -317,12 +331,9 @@ impl net::NapiPoller for NapiHandler {
         let mut rdt = data.e1000_hw_ops.e1000_read_rx_queue_tail() as usize;
         rdt = (rdt + 1) % RX_RING_SIZE;
 
-
-
         let mut rx_ring_guard = data.rx_ring.lock();
         let rx_ring =  rx_ring_guard.as_mut().unwrap();
 
-        
         let mut descs = rx_ring.desc.as_desc_slice();
 
         while descs[rdt].status & E1000_RXD_STAT_DD as u8 != 0 {
@@ -462,12 +473,16 @@ impl pci::Driver for E1000Drv {
             E1000DrvPrvData{
                 // Must hold this registration, or the device will be removed.
                 _netdev_reg: netdev_reg,
+                bars,
             }
         )?)
     }
 
-    fn remove(data: &Self::Data) {
+    fn remove(pci_dev: &mut pci::Device, data: &Self::Data) {
         pr_info!("Rust for linux e1000 driver demo (remove)\n");
+        let bars = pci_dev.select_bars((bindings::IORESOURCE_MEM | bindings::IORESOURCE_IO) as u64);
+        pci_dev.release_selected_regions(bars);
+        pci_dev.disable_device();
     }
 }
 struct E1000KernelMod {

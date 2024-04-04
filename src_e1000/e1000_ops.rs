@@ -68,6 +68,12 @@ impl E1000Ops {
         self.mem_addr.readl(E1000_STATUS).unwrap();
     }
 
+    pub(crate) fn e1000_irq_disable(&self) -> Result {
+        self.mem_addr.writel(!0, E1000_IMS)?;
+        self.e1000_write_flush();
+        Ok(())
+    }
+
     fn e1000_write_reg_io(&self, value: u32, addr: usize) -> Result {
         self.io_addr.outl(addr as u32, 0)?;
         self.io_addr.outl(value, 4)?;

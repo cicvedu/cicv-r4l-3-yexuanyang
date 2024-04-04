@@ -10,6 +10,14 @@ menuconfig SAMPLES_RUST
 
 if SAMPLES_RUST
 
+config SAMPLE_RUST_HELLOWORLD
+	tristate "Print Helloworld in Rust"
+	help
+	  This option is just a test
+	  
+	  To compile this as a module, choose M here:
+	  the module will be called rust_helloworld
+
 config SAMPLE_RUST_MINIMAL
 	tristate "Minimal"
 	help
