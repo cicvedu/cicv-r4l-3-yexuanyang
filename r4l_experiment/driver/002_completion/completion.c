@@ -32,6 +32,7 @@ ssize_t completion_read(struct file *filp, char __user *buf, size_t count, loff_
 	pr_info("%s() is invoked\n", __FUNCTION__);
 
 	pr_info("process %d(%s) is going to sleep\n", current->pid, current->comm);
+	pr_info("completion address is %px\n", &dev->completion);
 	wait_for_completion(&dev->completion);
 	pr_info("awoken %d(%s)\n", current->pid, current->comm);
 
@@ -48,6 +49,7 @@ ssize_t completion_write(struct file *filp, const char __user *buf, size_t count
 
 	pr_info("process %d(%s) awakening the readers...\n",
 	       current->pid, current->comm);
+	pr_info("completion address is %px\n", &dev->completion);
 	complete(&dev->completion);
 
 	return count;
