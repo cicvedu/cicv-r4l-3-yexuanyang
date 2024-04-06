@@ -50,10 +50,10 @@ impl file::Operations for CompletionRust {
         pr_info!("function read is invoked");
         pr_info!("process {} is going to sleep", Task::current().pid());
         let completion:*mut bindings::completion;
-        {
-            let lock = COMPLETION.lock();
-            completion = lock.deref().as_ref().unwrap().0.get();
-        }
+        let lock = COMPLETION.lock();
+        
+        completion = lock.deref().as_ref().unwrap().0.get();
+        drop(lock);
         unsafe { bindings::wait_for_completion(completion) };
         pr_info!("awoken {}", Task::current().pid());
         
@@ -69,10 +69,9 @@ impl file::Operations for CompletionRust {
         pr_info!("function write is invoked");
         pr_info!("process {} awakening the readers", Task::current().pid());
         let completion:*mut bindings::completion;
-        {
-            let lock = COMPLETION.lock();
-            completion = lock.deref().as_ref().unwrap().0.get()
-        }
+        let lock = COMPLETION.lock();
+        completion = lock.deref().as_ref().unwrap().0.get();
+        drop(lock);
         unsafe { bindings::complete(completion) };
         Ok(reader.len())
     }
