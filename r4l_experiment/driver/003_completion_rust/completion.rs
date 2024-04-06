@@ -20,14 +20,15 @@ module! {
 
 struct Completion(UnsafeCell<bindings::completion>);
 
-impl Completion {
-    /// Get inner completion pointer
-    pub(crate) fn get(&self) -> *mut bindings::completion{
-        self.0.get()
+impl Deref for Completion {
+    type Target = UnsafeCell<bindings::completion>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
-static COMPLETION: Mutex<Option<Completion>> = unsafe {
+static COMPLETION: Mutex<Option<Pin<Box<Completion>>>> = unsafe {
     Mutex::new(None)
 };
 
@@ -88,9 +89,9 @@ impl kernel::Module for CompletionDev {
         let mut chrdev_reg = chrdev::Registration::new_pinned(name, 0, module)?;
         
         let mut completion = COMPLETION.lock();
-        *completion = Some(Completion(UnsafeCell::new(bindings::completion::default())));
-        let a = completion.deref().as_ref().unwrap().get();
-        unsafe{ bindings::init_completion(a) };
+        let inner = Pin::new(Box::try_new(Completion(UnsafeCell::new(bindings::completion::default())))?);
+        unsafe{ bindings::init_completion(inner.get()) };
+        *completion = Some(inner);
 
         chrdev_reg.as_mut().register::<CompletionRust>()?;
 
