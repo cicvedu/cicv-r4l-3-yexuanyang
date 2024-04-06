@@ -18,7 +18,14 @@ module! {
     license: "GPL",
 }
 
-struct Completion(pub(crate) UnsafeCell<bindings::completion>);
+struct Completion(UnsafeCell<bindings::completion>);
+
+impl Completion {
+    /// Get inner completion pointer
+    pub(crate) fn get(&self) -> *mut bindings::completion{
+        self.0.get()
+    }
+}
 
 static COMPLETION: Mutex<Option<Completion>> = unsafe {
     Mutex::new(None)
@@ -49,12 +56,10 @@ impl file::Operations for CompletionRust {
     ) -> Result<usize> {
         pr_info!("function read is invoked");
         pr_info!("process {} is going to sleep", Task::current().pid());
-        let completion:*mut bindings::completion;
         let lock = COMPLETION.lock();
-        
-        completion = lock.deref().as_ref().unwrap().0.get();
+        let completion = lock.deref().as_ref().unwrap().get();
         drop(lock);
-        unsafe { bindings::wait_for_completion(completion) };
+        unsafe{ bindings::wait_for_completion(completion) };
         pr_info!("awoken {}", Task::current().pid());
         
         Ok(0)
@@ -68,11 +73,11 @@ impl file::Operations for CompletionRust {
     ) -> Result<usize> {
         pr_info!("function write is invoked");
         pr_info!("process {} awakening the readers", Task::current().pid());
-        let completion:*mut bindings::completion;
+        
         let lock = COMPLETION.lock();
-        completion = lock.deref().as_ref().unwrap().0.get();
+        let completion = lock.deref().as_ref().unwrap().get();
         drop(lock);
-        unsafe { bindings::complete(completion) };
+        unsafe{ bindings::complete(completion) };
         Ok(reader.len())
     }
 }
@@ -84,7 +89,7 @@ impl kernel::Module for CompletionDev {
         
         let mut completion = COMPLETION.lock();
         *completion = Some(Completion(UnsafeCell::new(bindings::completion::default())));
-        let a = completion.deref().as_ref().unwrap().0.get();
+        let a = completion.deref().as_ref().unwrap().get();
         unsafe{ bindings::init_completion(a) };
 
         chrdev_reg.as_mut().register::<CompletionRust>()?;
